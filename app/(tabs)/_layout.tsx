@@ -1,12 +1,30 @@
 import { Tabs } from 'expo-router';
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 
 import { TabBarIcon } from '@/components/navigation/TabBarIcon';
 import { Colors } from '@/constants/Colors';
 import { useColorScheme } from '@/hooks/useColorScheme';
 import { MaterialIcons } from '@expo/vector-icons';
+import { DeviceEventEmitter, Image, View } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 export default function TabLayout() {
+  const [image, setImage] = useState()
+  useEffect(() => {
+    DeviceEventEmitter.addListener('update', eventData =>updateBottomPic)
+    updateBottomPic()
+  },[])
+
+
+
+  async function updateBottomPic() {
+    const pic = await AsyncStorage.getItem("profileData")
+    if (pic) {
+      const serializedPic = JSON.parse(pic)
+      setImage(serializedPic.profilePicture)
+    }
+
+  }
   const colorScheme = useColorScheme();
 
   return (
@@ -20,7 +38,7 @@ export default function TabLayout() {
         options={{
           title: 'Home',
           tabBarIcon: ({ color, focused }) => (
-            <MaterialIcons name="home" size={28} color={focused?"#009959":'gray'} />
+            <MaterialIcons name="home" size={28} color={focused ? "#009959" : 'gray'} />
           ),
         }}
       />
@@ -29,7 +47,20 @@ export default function TabLayout() {
         options={{
           title: 'History',
           tabBarIcon: ({ color, focused }) => (
-            <MaterialIcons name="history" size={28} color={focused?"#009959":'gray'} />
+            <MaterialIcons name="history" size={28} color={focused ? "#009959" : 'gray'} />
+          ),
+        }}
+      />
+      <Tabs.Screen
+        name="profile"
+        options={{
+          title: 'Profile',
+          tabBarIcon: ({ color, focused }) => (
+            
+            <Image source={image?{ uri: 'data:image/png;base64,' + image }:require('@/assets/images/react-logo.png')}
+              style={{ objectFit: 'cover', width: 30, height: 30, borderRadius: 20 }}
+            />
+
           ),
         }}
       />

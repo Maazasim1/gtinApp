@@ -300,7 +300,7 @@ export default function HomeScreen() {
 
   const searchGtin = async (code: string) => {
     let result;
-    const res = await fetch(`http://192.168.18.50:3000/searchGtin/${code}`,
+    const res = await fetch(`https://barcode-backend-fawn.vercel.app/searchGtin/${code}`,
       {
         method: 'GET',
         headers: {
