@@ -4,8 +4,9 @@ import * as DocumentPicker from 'expo-document-picker';
 import * as FileSystem from 'expo-file-system';
 import XLSX from 'xlsx';
 import GetTransferDataModal from './GetTransferDataModal';
+import GetTransferDataModalPO from './GetTransferDataModalPO';
 
-const ExcelPicker = (props: any) => {
+const ExcelPickerPO = (props: any) => {
     const [isModalVisible, setModalVisible] = useState(false);
     const [jsonData, setJsonData] = useState(null);
     const [transferData, setTransferData] = useState({});
@@ -14,14 +15,14 @@ const ExcelPicker = (props: any) => {
         setModalVisible(!isModalVisible);
     };
 
-    const handleFilePicker = async (location: string, transferNo: string, date: string, receivedBy: string, checkedBy: string) => {
+    const handleFilePicker = async (location: string, referenceNumber: string, date: string, receivedBy: string,invoiceNumber:string) => {
         try {
-            if (!location || !transferNo || !receivedBy || !checkedBy) {
+            if (!location || !referenceNumber || !receivedBy ) {
                 alert('Please fill in all fields');
                 return;
             }
             const data = {
-                location, transferNo, date, receivedBy, checkedBy
+                location, referenceNumber, date, receivedBy,transferNo:invoiceNumber
             }
             props.setUserData(data);
             const res = await DocumentPicker.getDocumentAsync({
@@ -52,12 +53,16 @@ const ExcelPicker = (props: any) => {
                 const data: any = XLSX.utils.sheet_to_json(sheet);
                 console.log(data)
                 if (data) {
-                    const updatedArray = data.map(item => ({
-                        ...item,
+                    const updatedArray = data.map((item: any) => ({
+                        "Ship Qty.":item["Ordered"],
+                        "Line Desc":item["Item Description"],
+                        "Item Code":item["Item Code"],
                         ["scanned"]: false
                     }));
+                 
                     props.setTransferData(updatedArray);
                     const date = new Date().toLocaleString();
+                    console.log(date)
                     props.setStartingTime(date)
                 }
 
@@ -72,10 +77,10 @@ const ExcelPicker = (props: any) => {
 
         return (
             <View>
-                <GetTransferDataModal isVisible={isModalVisible} onClose={toggleModal} pickFile={handleFilePicker} />
+                <GetTransferDataModalPO isVisible={isModalVisible} onClose={toggleModal} pickFile={handleFilePicker} />
 
                 <TouchableOpacity onPress={toggleModal} style={{ backgroundColor: '#009959', alignItems: 'center', padding: 20, borderRadius: 40, marginTop: 20 }}>
-                    <Text style={{ color: 'white', fontWeight: 600, fontSize: 16 }}>Select Transfer File</Text>
+                    <Text style={{ color: 'white', fontWeight: 600, fontSize: 16 }}>Select PO File</Text>
                 </TouchableOpacity>
             </View>
 
@@ -84,4 +89,4 @@ const ExcelPicker = (props: any) => {
     }
 };
 
-export default ExcelPicker;
+export default ExcelPickerPO;

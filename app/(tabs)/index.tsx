@@ -1,35 +1,63 @@
-import { useEffect, useState } from 'react';
-import { Image, ScrollView, StyleSheet, Text, TextInput, View, Alert, TouchableOpacity, ToastAndroid, DeviceEventEmitter, Pressable } from 'react-native';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { Switch, ScrollView, StyleSheet, Text, TextInput, View, Alert, TouchableOpacity, ToastAndroid, DeviceEventEmitter, Pressable } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import TransferCard from '@/components/TransferCard';
 import ExcelPicker from '@/components/ExcelPicker';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import ReportScreen from '@/components/ReportScreen';
+import ReportScreen, { createReportData } from '@/components/ReportScreen';
 import * as Haptics from 'expo-haptics';
 import Toast from 'react-native-root-toast';
 import LastItemCard from '@/components/LastItemCard';
 import { router } from 'expo-router';
 import React from 'react';
+import { useIsFocused } from '@react-navigation/native';
+import NumericPicker from '@/components/NumericPicker';
+import { Picker } from '@react-native-picker/picker';
+import ExcelPickerPO from '@/components/ExcelPickerPO';
+
 
 export default function HomeScreen() {
   const [transferData, setTransferData] = useState([]);
   const [userData, setUserData] = useState([]);
   const [originalData, setOriginalData] = useState([]);
+  const [difference, setDifference] = useState<{ allItemsArray:any[], discrepancyArray:any[] }>();
   const [scan, setScan] = useState("")
   const [date, setDate] = useState("")
   const [lastScanned, setLastScanned] = useState("")
   const [code, setCode] = useState("")
+  const focus = useIsFocused();
+  const [showTransferred, setShowTransferred] = useState(true);
+  const [isEnabled, setIsEnabled] = useState(false);
+  const [ready, setReady] = useState(false)
+  const [selectedNumber, setSelectedNumber] = useState(1);
+  const [input, setInput] = useState("");
+  const [startingTime, setStartingTime] = useState<string>();
+  const [search, setSearch] = useState();
+  const [searchData,setSearchData]=useState([]);
 
   useEffect(() => {
-    const subscription = DeviceEventEmitter.addListener('cameraScan', (eventData) => {
+    DeviceEventEmitter.addListener('event.cameraScan', async (eventData) => {
       console.log("Camera scan event received", eventData);
-      handleScanCamera(eventData);
+      if (isEnabled) {
+        setInput("camera")
+        setScan(eventData);
+      }
+      else {
+        await handleScanCamera(eventData);
+      }
+
     });
 
     return () => {
-      subscription.remove();
+      DeviceEventEmitter.removeAllListeners('event.cameraScan')
     };
-  }, [handleScanCamera]);
+  }, [focus]);
+
+  useEffect(() => {
+    if (isEnabled && scan && input === "camera") {
+      openPicker()
+    }
+  }, [scan, input])
 
   useEffect(() => {
     const handleTransferUpdate = (eventData: any[]) => {
@@ -68,32 +96,48 @@ export default function HomeScreen() {
 
 
   useEffect(() => {
+    const data = createReportData(transferData, originalData)
+    console.log(data)
+    setDifference(data)
     if (originalData.length === 0) {
       setOriginalData(transferData)
 
     }
     else {
       saveCache()
+
     }
-  }, [transferData])
+  }, [transferData, showTransferred])
 
   useEffect(() => {
     getCacheAndSetState(setTransferData, setUserData);
+
+
   }, [])
 
-  const saveCache = async () => {
-    await AsyncStorage.setItem("originalData", JSON.stringify(originalData));
-    await AsyncStorage.setItem("data", JSON.stringify(transferData));
-    await AsyncStorage.setItem("location", userData.location);
-    await AsyncStorage.setItem("date", JSON.stringify(userData.date));
-    await AsyncStorage.setItem("transferNumber", userData.transferNo);
-    await AsyncStorage.setItem("received", userData.receivedBy);
-    await AsyncStorage.setItem("checked", userData.checkedBy);
-  }
+  const saveCache = useCallback(async () => {
+    const date = new Date(userData.date)
+    console.log(userData.date)
+    try {
+      // Store individual items one by one to avoid high memory usage
+      await AsyncStorage.multiSet([
+        ["startingTime", startingTime],
+        ["originalData", JSON.stringify(originalData)],
+        ["data", JSON.stringify(transferData)],
+        ["location", userData.location || ""],
+        ["date", (date.toDateString() || "")],
+        ["transferNumber", userData.transferNo || ""],
+        ["received", userData.receivedBy || ""],
+        ["checked", userData.checkedBy || ""],
+      ]);
+    } catch (error) {
+      console.error("Error saving cache", error);
+    }
+  }, [originalData, transferData, userData]);
 
   const getCacheAndSetState = async (setTransferData, setUserData) => {
     try {
-      // await AsyncStorage.clear()
+       // await AsyncStorage.clear()
       const ogData = await AsyncStorage.getItem("originalData");
       const data = await AsyncStorage.getItem("data");
       const location = await AsyncStorage.getItem("location");
@@ -102,13 +146,21 @@ export default function HomeScreen() {
       const received = await AsyncStorage.getItem("received");
       const checked = await AsyncStorage.getItem("checked");
       const date = await AsyncStorage.getItem("date")
+      const start = await AsyncStorage.getItem("startingTime")
+      const scanned = createReportData(JSON.parse(data), JSON.parse(ogData))
+      console.log(scanned)
+      setDifference(scanned)
 
       if (data !== null) {
-        setTransferData(JSON.parse(data));
+        if (transferData.length === 0) {
+          setTransferData(JSON.parse(data));
+        }
 
       }
       if (ogData !== null) {
-        setOriginalData(JSON.parse(ogData));
+        if (originalData.length === 0) {
+          setOriginalData(JSON.parse(ogData));
+        }
       }
 
       setUserData((prevUserData) => ({
@@ -118,7 +170,11 @@ export default function HomeScreen() {
         receivedBy: received || prevUserData.receivedBy,
         checkedBy: checked || prevUserData.checkedBy,
         date: date || prevUserData.date,
+
       }));
+      if (start) {
+        setStartingTime(start)
+      }
 
 
     } catch (error) {
@@ -140,24 +196,41 @@ export default function HomeScreen() {
   }
 
   const isValidGTIN = (gtin: string) => {
-    const gtinRegex = /^(?:\d{8}|\d{12}|\d{13}|\d{14})$/;
+    const gtinRegex = /^(?:\d{8}|\d{12}|\d{13}|\d{14})|^.{16}$/;
     return gtinRegex.test(gtin);
+  }
+  function handleSearch(searchString:string){
+    setSearch(searchString);
+    if(searchString){
+      const searchArray=transferData.filter((search)=>search["Line Desc"].includes(searchString)||search["Item Code"].includes(searchString));
+      setSearchData(searchArray);
+    }
+
   }
 
 
 
-  const handleScanCamera = React.useCallback(async (gtin: string) => {
+  const handleScanCamera = async (gtin: string, number = 1) => {
     setScan(gtin)
+    console.log(gtin)
+    if (!isValidGTIN(gtin)) {
+      let toast = Toast.show('invalid gtin', {
+        duration: Toast.durations.SHORT,
+        position: Toast.positions.TOP
+      })
+
+    }
     if (isValidGTIN(gtin)) {
       const data = await searchGtin(gtin);
       console.log(data)
 
       if (data) {
         const index = transferData.findIndex((item) => item["Item Code"] === data.itemCode);
+        console.log(originalData)
         console.log(transferData)
         if (index !== -1) {
           setLastScanned(transferData[index]["Line Desc"])
-          if (parseInt(transferData[index]["Order Qty."]) === 0) {
+          if (parseInt(transferData[index]["Ship Qty."]) === 0) {
             Alert.alert('Extra item detected', "You have already scanned all of this item. Would you like to scan an extra item?", [
               {
                 text: 'Cancel',
@@ -170,7 +243,7 @@ export default function HomeScreen() {
               {
                 text: 'OK', onPress: () => {
                   const updatedTransferData = transferData.map((item: any, i) =>
-                    i === index ? { ...item, "Order Qty.": (parseInt(item["Order Qty."]) - 1).toString() } : item
+                    i === index ? { ...item, "Ship Qty.": (parseInt(item["Ship Qty."]) - number).toString() } : item
                   );
                   //ts-ignore
                   setTransferData(updatedTransferData);
@@ -194,8 +267,9 @@ export default function HomeScreen() {
           }
           else {
 
+
             const updatedTransferData = transferData.map((item: any, i) =>
-              i === index ? { ...item, "Order Qty.": (parseInt(item["Order Qty."]) - 1).toString() } : item
+              i === index ? { ...item, "Ship Qty.": (parseInt(item["Ship Qty."]) - number).toString() } : item
             );
             setTransferData(updatedTransferData);
 
@@ -213,22 +287,24 @@ export default function HomeScreen() {
           }
         }
       }
+      router.navigate('/camera')
     }
-  }, []);
+  }
 
 
-  const handleScan = async () => {
-    console.log("over here" + code)
+  const handleScan = async (number = 1) => {
+    console.log("over here" + code.length)
     setScan(code)
     if (isValidGTIN(code)) {
       const data = await searchGtin(code);
 
       if (data) {
         const index = transferData.findIndex((item) => item["Item Code"] === data.itemCode);
-
+        console.log(index)
         if (index !== -1) {
           setLastScanned(transferData[index]["Line Desc"])
-          if (parseInt(transferData[index]["Order Qty."]) === 0) {
+          console.log(transferData[index]["Ship Qty."])
+          if (parseInt(transferData[index]["Ship Qty."]) === 0) {
             Haptics.notificationAsync(
               Haptics.NotificationFeedbackType.Error
             )
@@ -244,7 +320,7 @@ export default function HomeScreen() {
               {
                 text: 'OK', onPress: () => {
                   const updatedTransferData = transferData.map((item: any, i) =>
-                    i === index ? { ...item, "Order Qty.": (parseInt(item["Order Qty."]) - 1).toString() } : item
+                    i === index ? { ...item, "Ship Qty.": (parseInt(item["Ship Qty."]) - number).toString() } : item
                   );
                   //ts-ignore
                   setTransferData(updatedTransferData);
@@ -269,7 +345,7 @@ export default function HomeScreen() {
           else {
 
             const updatedTransferData = transferData.map((item: any, i) =>
-              i === index ? { ...item, "Order Qty.": (parseInt(item["Order Qty."]) - 1).toString() } : item
+              i === index ? { ...item, "Ship Qty.": (parseInt(item["Ship Qty."]) - number).toString() } : item
             );
             setTransferData(updatedTransferData);
 
@@ -300,7 +376,9 @@ export default function HomeScreen() {
 
   const searchGtin = async (code: string) => {
     let result;
-    const res = await fetch(`https://barcode-backend-fawn.vercel.app/searchGtin/${code}`,
+    const res = await fetch(
+      `https://barcode-backend-fawn.vercel.app/searchGtin/${code}`,
+      //`http://192.168.1.3:3000/searchGtin/${code}`,
       {
         method: 'GET',
         headers: {
@@ -330,10 +408,39 @@ export default function HomeScreen() {
 
   const totalItem = (array: any[]): number => {
     const summation = array.reduce((prevItem: number, nextItem: any) => {
-      return prevItem + parseInt(nextItem["Order Qty."]);
+      return prevItem + parseInt(nextItem["Ship Qty."]);
     }, 0);
     return summation;
   };
+
+  function openPicker() {
+    if (isEnabled) {
+      pickerRef.current.focus();
+    }
+
+  }
+
+
+  async function handleScanPicker(number: number) {
+    setSelectedNumber(number);
+    if (input === "camera") {
+      pickerRef.current.blur();
+      await handleScanCamera(scan, number);
+    } else if (input === "text") {
+      pickerRef.current.blur();
+      await handleScan(number);
+    }
+    setInput("");
+    setScan("");
+  }
+
+  function handleText() {
+    setInput("text")
+    openPicker();
+  }
+
+  const toggleSwitch = () => setIsEnabled(previousState => !previousState);
+  const pickerRef = useRef()
 
   return (
     <View style={{ paddingTop: 30, paddingHorizontal: 15, backgroundColor: '#F6F6F6', flex: 1, justifyContent: 'space-around' }}>
@@ -347,64 +454,119 @@ export default function HomeScreen() {
           <Text style={{ fontWeight: 800 }}>{userData.checkedBy}</Text>
         </View>
       </View> */}
-      <View style={{ flexDirection: 'row', alignItems: 'center', padding: 10, borderRadius: 25, backgroundColor: '#E7E7E7' }}>
-        <Pressable onPress={() => {
-          console.log("button Pressed")
-          router.push('camera')
-        }}>
-          <Ionicons name="camera" size={24} color="black" style={{ marginRight: 10 }} />
-        </Pressable>
+      <View>
 
-        <TextInput
+        <View style={{ marginBottom: 10, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 10, borderRadius: 25, backgroundColor: '#E7E7E7' }}>
+          <Pressable onPress={() => {
+            console.log("button Pressed")
+            router.push('camera')
+          }}>
+            <Ionicons name="camera" size={24} color="black" style={{ marginRight: 10 }} />
+          </Pressable>
 
-          style={{ width: '100%', height: 30, }}
-          placeholder='Scan here'
-          placeholderTextColor={'#989898'}
-          onChangeText={(code) => setCode(code)}
-          onSubmitEditing={handleScan}
-          blurOnSubmit={false}
-          autoFocus={true}
-          value={code}
-        >
-        </TextInput>
+
+          <TextInput
+            style={{ height: 50,width:"70%" }}
+            placeholder='Scan here'
+            placeholderTextColor={'#989898'}
+            onChangeText={(code) => setCode(code)}
+            onSubmitEditing={() => isEnabled ? handleText() : handleScan()}
+            blurOnSubmit={false}
+            autoFocus={true}
+            value={code}
+          >
+          </TextInput>
+          <Switch
+            trackColor={{ false: '#767577', true: '#009959' }}
+            thumbColor={isEnabled ? '#f4f3f4' : '#f4f3f4'}
+            ios_backgroundColor="#3e3e3e"
+            onValueChange={toggleSwitch}
+            value={isEnabled}
+          />
+
+        </View>
+        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 10, borderRadius: 25, backgroundColor: '#E7E7E7' }}>
+
+          <Ionicons name="search" size={24} color="black" style={{ marginRight: 10 }} />
+
+
+          <TextInput
+
+            style={{ height: 50, width: '100%' }}
+            placeholder='Search here'
+            placeholderTextColor={'#989898'}
+            onChangeText={(code) => handleSearch(code)}
+            value={search}
+          >
+          </TextInput>
+
+
+        </View>
       </View>
       <View style={{ flex: 0.1, flexDirection: 'row', justifyContent: 'space-evenly' }}>
-        <View style={{ alignItems: 'center', justifyContent: 'space-between' }}>
-          <Text style={{ fontWeight: 600 }}>Items to scan</Text>
-          <Text>{totalItem(transferData)}</Text>
-        </View>
+        <TouchableOpacity onPress={() => setShowTransferred(true)}>
+          <View style={{ alignItems: 'center', justifyContent: 'space-between', backgroundColor: showTransferred ? '#009959' : 'transparent', padding: 10, borderRadius: 20 }}>
+            <Text style={{ fontWeight: 600, color: showTransferred ? 'white' : 'black' }}>Items to scan</Text>
+            <Text style={{ color: showTransferred ? 'white' : 'black' }}>{totalItem(transferData)}</Text>
+          </View>
+        </TouchableOpacity>
+
         <View style={{ height: '100%', width: 2, backgroundColor: 'gray' }}>
 
         </View>
-        <View style={{ alignItems: 'center', justifyContent: 'space-between' }}>
-          <Text style={{ fontWeight: 600 }}>Items scanned</Text>
-          <Text>{totalItem(originalData) - totalItem(transferData)}</Text>
-        </View>
+
+        <TouchableOpacity onPress={() => setShowTransferred(false)}>
+          <View style={{ alignItems: 'center', justifyContent: 'space-between', backgroundColor: showTransferred ? 'transparent' : '#009959', padding: 10, borderRadius: 20 }}>
+            <Text style={{ fontWeight: 600, color: !showTransferred ? 'white' : 'black' }}>Items scanned</Text>
+            <Text style={{ color: !showTransferred ? 'white' : 'black' }}>{totalItem(originalData) - totalItem(transferData)}</Text>
+          </View>
+        </TouchableOpacity>
 
       </View>
       <View style={{ flex: 0.5, backgroundColor: '' }}>
         <Text style={{ fontSize: 18, fontWeight: 600, marginBottom: 10 }}>Current Transfer Items</Text>
         <View>
           <ScrollView>
-            {
-              transferData.map((items, index) =>
-                <TransferCard index={items["Order Qty."]} key={index} code={items["Item Code"]} name={items["Line Desc"]} scanned={items["scanned"]} />
-              )
+            {showTransferred ? (
+
+              !search?
+              transferData.map((items, index) => <TransferCard index={items["Ship Qty."]} key={index} code={items["Item Code"]} name={items["Line Desc"]} scanned={items["scanned"]} />)
+              :searchData.map((items, index) => <TransferCard index={items["Ship Qty."]} key={index} code={items["Item Code"]} name={items["Line Desc"]} scanned={items["scanned"]} />)
+            ) : (
+              difference?.allItemsArray.filter((items) => Number(items[3]) !== 0).map((items, index) => <TransferCard index={items[3]} key={index} code={items[0]} name={items[1]} />)
+            )
             }
 
-            <ExcelPicker setTransferData={setTransferData} transferData={transferData} setUserData={setUserData} />
+            <ExcelPicker setStartingTime={setStartingTime} setTransferData={setTransferData} transferData={transferData} setUserData={setUserData} />
+            <ExcelPickerPO setStartingTime={setStartingTime} setTransferData={setTransferData} transferData={transferData} setUserData={setUserData} />
+            
 
           </ScrollView>
+        
 
         </View>
 
       </View>
-      {transferData.length > 0 && <ReportScreen transferData={transferData} originalData={originalData} clearCache={clearCache} setOriginalData={setOriginalData} setTransferData={setTransferData} location={userData.location} checkedBy={userData.checkedBy} receivedBy={userData.receivedBy} date={userData.date} transferNo={userData.transferNo} />}
+      {transferData.length > 0 && <ReportScreen transferData={transferData} originalData={originalData} clearCache={clearCache} setOriginalData={setOriginalData} setTransferData={setTransferData} location={userData.location} checkedBy={userData.checkedBy} receivedBy={userData.receivedBy} date={userData.date} transferNo={userData.transferNo} startingTime={startingTime} />}
       <View>
         <LastItemCard name={lastScanned || "No Items Scanned Yet"} />
       </View>
 
-    </View>
+      <Picker
+        style={{ display: 'none' }}
+        ref={pickerRef}
+        selectedValue={selectedNumber}
+        onValueChange={(itemValue: number) => handleScanPicker(itemValue)}
+      >
+        {[...Array(100).keys()].map((number) => (
+          <Picker.Item key={number + 1} label={(number + 1).toString()} value={number + 1} />
+        ))}
+      </Picker>
+    
+
+
+
+    </View >
   );
 }
 

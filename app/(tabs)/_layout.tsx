@@ -9,22 +9,22 @@ import { DeviceEventEmitter, Image, View } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 export default function TabLayout() {
-  const [image, setImage] = useState()
-  useEffect(() => {
-    DeviceEventEmitter.addListener('update', eventData =>updateBottomPic)
-    updateBottomPic()
-  },[])
+  // const [image, setImage] = useState()
+  // useEffect(() => {
+  //   DeviceEventEmitter.addListener('update', eventData =>updateBottomPic(eventData))
+  //   return()=> DeviceEventEmitter.removeAllListeners('update')
+  // },[])
 
 
 
-  async function updateBottomPic() {
-    const pic = await AsyncStorage.getItem("profileData")
-    if (pic) {
-      const serializedPic = JSON.parse(pic)
-      setImage(serializedPic.profilePicture)
-    }
+  // async function updateBottomPic(profilepicture) {
+  //   const pic = await AsyncStorage.getItem("profileData")
+  //   if (pic) {
+  //     const serializedPic = JSON.parse(pic)
+  //     setImage(profilepicture)
+  //   }
 
-  }
+  // }
   const colorScheme = useColorScheme();
 
   return (
@@ -51,7 +51,7 @@ export default function TabLayout() {
           ),
         }}
       />
-      <Tabs.Screen
+      {/* <Tabs.Screen
         name="profile"
         options={{
           title: 'Profile',
@@ -63,7 +63,7 @@ export default function TabLayout() {
 
           ),
         }}
-      />
+      /> */}
     </Tabs>
   );
 }

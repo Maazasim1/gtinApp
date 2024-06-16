@@ -11,19 +11,19 @@ export default function CameraScreen() {
   const [facing, setFacing] = useState('back');
   const [torch, setTorch] = useState(false);
   const [permission, requestPermission] = useCameraPermissions();
-  const [showCamera, setShowCamera] = useState(false);
+  const [showCamera, setShowCamera] = useState(true);
 
-  useFocusEffect(
-    React.useCallback(() => {
-      console.log("focus");
-      setShowCamera(true);
+  // useFocusEffect(
+  //   () => {
+  //     console.log("focus");
+  //     setShowCamera(true);
 
-      return () => {
-        setShowCamera(false);
-        console.log("not in focus");
-      };
-    }, [])
-  );
+  //     return () => {
+  //       setShowCamera(false);
+  //       console.log("not in focus");
+  //     };
+  //   }
+  // );
 
   if (!permission) {
     // Camera permissions are still loading.
@@ -44,25 +44,30 @@ export default function CameraScreen() {
     setFacing(current => (current === 'back' ? 'front' : 'back'));
   }
 
-  function handleBarcodeScan(scan) {
+  function handleBarcodeScan(scan: any) {
     setShowCamera(false);
-    DeviceEventEmitter.emit('cameraScan', scan.data);
-    router.navigate('/');
+    console.log(scan.data + "hwew")
+    DeviceEventEmitter.emit('event.cameraScan', scan.data)
+    setShowCamera(false)
+
+    router.back();
   }
 
-  return (
-    <View
-      style={styles.container}
-    >
+  if (showCamera) {
 
-      {showCamera && (
+    return (
+      <View
+        style={styles.container}
+      >
+
+
         <CameraView style={styles.camera} facing={facing} onBarcodeScanned={handleBarcodeScan} enableTorch={torch}>
-          <CustomMaskedView torch={torch} setTorch={setTorch} toggleCameraFacing={toggleCameraFacing}/>
-           
+          <CustomMaskedView torch={torch} setTorch={setTorch} toggleCameraFacing={toggleCameraFacing} />
         </CameraView>
-      )}
-    </View >
-  );
+
+      </View >
+    );
+  }
 }
 
 const styles = StyleSheet.create({

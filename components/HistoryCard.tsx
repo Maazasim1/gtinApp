@@ -34,7 +34,7 @@ export default function HistoryCard(props: any) {
                     <Text>Location : {props.location}</Text>
                     <Text>Received By : {props.receivedBy}</Text>
                     <Text>Checked By : {props.checkedBy}</Text>
-                    <Text>Checked By : {props.checkedBy}</Text>
+                    <Text>starting time : {props.startingTime}</Text>
 
 
 
